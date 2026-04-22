@@ -1,0 +1,64 @@
+name: Nightly Benchmarks
+
+on:
+  schedule:
+    # 02:00 UTC every day
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+env:
+  # Single-core baseline: document that all benchmark runs use 1 OpenBLAS thread
+  # so that results reflect per-core throughput rather than parallelism.
+  OPENBLAS_NUM_THREADS: "1"
+
+jobs:
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build libopenblas-dev gcc-12 g++-12
+
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/release/_deps
+            ~/.cache/ccache
+          key: "deps-release-gcc-12-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}"
+          restore-keys: |
+            deps-release-gcc-12-${{ runner.os }}-
+
+      - name: Configure (release)
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: cmake --preset release
+
+      - name: Build (release)
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: cmake --build --preset release
+
+      - name: Run microbenchmarks
+        if: "hashFiles('benchmarks/CMakeLists.txt') != ''"
+        run: |
+          ./build/release/benchmarks/microbench/bench_gemm \
+            --benchmark_format=json \
+            --benchmark_out=bench_results.json \
+            --benchmark_min_time=1 \
+            --benchmark_repetitions=20
+
+      - name: Upload benchmark results
+        if: "hashFiles('benchmarks/CMakeLists.txt') != ''"
+        uses: actions/upload-artifact@v4
+        with:
+          name: "bench-results-${{ github.sha }}"
+          path: bench_results.json
+          retention-days: 90
