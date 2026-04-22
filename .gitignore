@@ -6,3 +6,4 @@ compile_commands.json
 .DS_Store
 models/*.fb
 third_party/
+.claude/worktrees/
