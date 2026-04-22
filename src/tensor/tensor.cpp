@@ -1,7 +1,9 @@
 #include "engine/tensor.hpp"
-#include <cassert>
 #include <cstring>
 #include <stdexcept>
+
+static_assert(ie::kDefaultAlignment >= 64,
+              "Alignment must be at least 64 bytes for AVX-512 and cache-line safety");
 
 namespace ie {
 
