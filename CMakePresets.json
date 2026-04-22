@@ -1,0 +1,75 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android arm64-v8a",
+      "inherits": "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/android-arm64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_OPENMP": "OFF",
+        "ENABLE_CUDA": "OFF",
+        "ENABLE_NEON": "ON"
+      }
+    },
+    {
+      "name": "cuda",
+      "displayName": "Release + CUDA",
+      "inherits": "release",
+      "cacheVariables": {
+        "ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "debug",        "configurePreset": "debug"},
+    {"name": "release",      "configurePreset": "release"},
+    {"name": "asan",         "configurePreset": "asan"},
+    {"name": "android-arm64","configurePreset": "android-arm64"},
+    {"name": "cuda",         "configurePreset": "cuda"}
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {"outputOnFailure": true}
+    }
+  ]
+}
