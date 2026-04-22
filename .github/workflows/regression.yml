@@ -1,0 +1,99 @@
+name: Benchmark Regression Gate
+
+on:
+  pull_request:
+
+env:
+  # Single-core baseline: all benchmark runs use 1 OpenBLAS thread so that
+  # results reflect per-core throughput rather than OpenBLAS thread-pool scaling.
+  OPENBLAS_NUM_THREADS: "1"
+
+jobs:
+  regression-check:
+    name: regression-check
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build libopenblas-dev gcc-12 g++-12
+
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/release/_deps
+            ~/.cache/ccache
+          key: "deps-release-gcc-12-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json') }}"
+          restore-keys: |
+            deps-release-gcc-12-${{ runner.os }}-
+
+      - name: Configure (release)
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: cmake --preset release
+
+      - name: Build (release)
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: cmake --build --preset release
+
+      # Run a reduced benchmark suite (~2 min): 1024² sizes only, 5 repetitions.
+      - name: Run regression benchmarks
+        if: "hashFiles('benchmarks/CMakeLists.txt') != ''"
+        run: |
+          ./build/release/benchmarks/microbench/bench_gemm \
+            --benchmark_format=json \
+            --benchmark_out=bench_results.json \
+            --benchmark_filter="1024" \
+            --benchmark_min_time=1 \
+            --benchmark_repetitions=5
+
+      - name: Upload benchmark results artifact
+        if: "hashFiles('benchmarks/CMakeLists.txt') != ''"
+        uses: actions/upload-artifact@v4
+        with:
+          name: "regression-bench-${{ github.event.pull_request.number }}-${{ github.sha }}"
+          path: bench_results.json
+          retention-days: 30
+
+      - name: Check for regression
+        if: "hashFiles('benchmarks/CMakeLists.txt') != '' && hashFiles('tools/regression_check.py') != ''"
+        run: |
+          python3 tools/regression_check.py bench_results.json --threshold 0.05
+
+      - name: Comment regression results on PR
+        if: "always() && hashFiles('benchmarks/CMakeLists.txt') != ''"
+        uses: actions/github-script@v7
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            const fs = require('fs');
+            let body;
+            if (fs.existsSync('bench_results.json')) {
+              const raw = fs.readFileSync('bench_results.json', 'utf8');
+              const data = JSON.parse(raw);
+              const rows = (data.benchmarks || []).map(b => {
+                const ms = (b.real_time / 1e6).toFixed(3);
+                return `| ${b.name} | ${ms} ms | ${(b.items_per_second || 0).toFixed(2)} |`;
+              });
+              const table = rows.length > 0
+                ? `| Benchmark | Median wall time | Items/s |\n|---|---|---|\n${rows.join('\n')}`
+                : '_No benchmark data found._';
+              body = `## Benchmark Regression Results\n\n${table}\n\n` +
+                `Threshold: 5 % — PRs exceeding this are blocked unless the commit message ` +
+                `contains \`perf-regression-expected: <reason>\`.`;
+            } else {
+              body = '## Benchmark Regression Results\n\n_Benchmarks not yet built — skipped._';
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
