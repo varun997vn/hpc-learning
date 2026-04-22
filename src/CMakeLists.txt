@@ -9,3 +9,6 @@ target_include_directories(engine PUBLIC
 )
 
 target_compile_features(engine PUBLIC cxx_std_17)
+
+# Kernel libraries (each is its own static lib depending on engine)
+add_subdirectory(kernels/gemm)
