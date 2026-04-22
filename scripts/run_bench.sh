@@ -57,7 +57,7 @@ for bench in \
     "${bench}" \
         --benchmark_format=json \
         --benchmark_out="${out_file}" \
-        --benchmark_min_time=1 \
+        --benchmark_min_time=1s \
         --benchmark_repetitions=5
 
     SUMMARY["${name}"]="${out_file}"
