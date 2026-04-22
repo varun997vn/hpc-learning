@@ -1,0 +1,8 @@
+build/
+.cache/
+*.o *.a *.so *.dylib
+*.pb.h *.pb.cc
+compile_commands.json
+.DS_Store
+models/*.fb
+third_party/
