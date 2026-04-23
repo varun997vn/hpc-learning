@@ -40,9 +40,4 @@ void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, f
     }
 }
 
-void gemm_fp32_simd(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, TilingConfig /*cfg*/,
-                    int /*n_threads*/, float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_simd: not implemented");
-}
-
 } // namespace ie::kernels
