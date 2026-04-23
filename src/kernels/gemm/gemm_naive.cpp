@@ -4,8 +4,6 @@
 
 namespace ie::kernels {
 
-// Extracts [M, K, N] from A[M,K] * B[K,N] -> C[M,N] and throws
-// std::invalid_argument if any dimension is inconsistent or rank != 2.
 static void check_gemm_shapes(const Tensor& A, const Tensor& B, const Tensor& C, int64_t& M,
                               int64_t& K, int64_t& N) {
     if (A.shape().rank != 2 || B.shape().rank != 2 || C.shape().rank != 2)
@@ -40,11 +38,6 @@ void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, f
             c_row[j] = alpha * acc + beta * c_row[j];
         }
     }
-}
-
-void gemm_fp32_parallel(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/,
-                        TilingConfig /*cfg*/, int /*n_threads*/, float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_parallel: not implemented");
 }
 
 void gemm_fp32_simd(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, TilingConfig /*cfg*/,
