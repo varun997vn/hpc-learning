@@ -4,23 +4,20 @@
 
 namespace ie::kernels {
 
-// Extracts [M, K, N] from A[M,K] * B[K,N] -> C[M,N] and throws
-// std::invalid_argument if any dimension is inconsistent or rank != 2.
 static void check_gemm_shapes(const Tensor& A, const Tensor& B, const Tensor& C, int64_t& M,
                               int64_t& K, int64_t& N) {
     if (A.shape().rank != 2 || B.shape().rank != 2 || C.shape().rank != 2)
-        throw std::invalid_argument("gemm_fp32_naive: all tensors must be rank 2");
+        throw std::invalid_argument("gemm: all tensors must be rank 2");
 
     M = A.shape()[0];
     K = A.shape()[1];
     N = B.shape()[1];
 
     if (K != B.shape()[0])
-        throw std::invalid_argument(
-            "gemm_fp32_naive: A columns must equal B rows (inner dimension mismatch)");
+        throw std::invalid_argument("gemm: A columns must equal B rows (inner dimension mismatch)");
 
     if (C.shape()[0] != M || C.shape()[1] != N)
-        throw std::invalid_argument("gemm_fp32_naive: C shape must be [M, N] = [A.rows, B.cols]");
+        throw std::invalid_argument("gemm: C shape must be [M, N] = [A.rows, B.cols]");
 }
 
 void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, float beta) {
@@ -41,21 +38,6 @@ void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, f
             c_row[j] = alpha * acc + beta * c_row[j];
         }
     }
-}
-
-void gemm_fp32_tiled(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, TilingConfig /*cfg*/,
-                     float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_tiled: not implemented");
-}
-
-void gemm_fp32_parallel(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/,
-                        TilingConfig /*cfg*/, int /*n_threads*/, float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_parallel: not implemented");
-}
-
-void gemm_fp32_simd(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, TilingConfig /*cfg*/,
-                    int /*n_threads*/, float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_simd: not implemented");
 }
 
 } // namespace ie::kernels
