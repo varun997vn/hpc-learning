@@ -1,5 +1,6 @@
 add_library(ie_gemm STATIC
     gemm_naive.cpp
+    gemm_tiled.cpp
 )
 
 target_include_directories(ie_gemm PUBLIC
