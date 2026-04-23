@@ -2,6 +2,7 @@ add_library(engine STATIC)
 
 # Subdirectories add sources to the engine target
 add_subdirectory(tensor)
+add_subdirectory(kernels)
 
 target_include_directories(engine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
