@@ -1,28 +1,11 @@
 #include "engine/kernels/gemm.hpp"
+#include "gemm_internal.hpp"
 
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
 
 namespace ie {
 namespace kernels {
-
-namespace {
-void check_gemm_shapes_tiled(const Tensor& A, const Tensor& B, const Tensor& C) {
-    if (A.shape().rank != 2 || B.shape().rank != 2 || C.shape().rank != 2)
-        throw std::invalid_argument("gemm_fp32_tiled: all tensors must be rank-2");
-    const int64_t K = A.shape()[1];
-    const int64_t Kb = B.shape()[0];
-    const int64_t M = A.shape()[0];
-    const int64_t N = B.shape()[1];
-    const int64_t Mc = C.shape()[0];
-    const int64_t Nc = C.shape()[1];
-    if (K != Kb)
-        throw std::invalid_argument("gemm_fp32_tiled: A columns != B rows");
-    if (M != Mc || N != Nc)
-        throw std::invalid_argument("gemm_fp32_tiled: C shape does not match M x N");
-}
-} // namespace
 
 // 6-loop cache-blocked GEMM: C = alpha * A * B + beta * C
 //
@@ -34,7 +17,7 @@ void check_gemm_shapes_tiled(const Tensor& A, const Tensor& B, const Tensor& C) 
 // temporary buffer while keeping the inner loops free of beta arithmetic.
 void gemm_fp32_tiled(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig cfg, float alpha,
                      float beta) {
-    check_gemm_shapes_tiled(A, B, C);
+    detail::check_gemm_shapes("gemm_fp32_tiled", A, B, C);
 
     const int64_t M = A.shape()[0];
     const int64_t K = A.shape()[1];

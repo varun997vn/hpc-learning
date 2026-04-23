@@ -1,31 +1,14 @@
 #include "engine/kernels/gemm.hpp"
+#include "gemm_internal.hpp"
 
+#include <cstring>
 #include <stdexcept>
 
 namespace ie {
 namespace kernels {
 
-namespace {
-// Validates that A[M,K] * B[K,N] -> C[M,N] shapes are consistent.
-// Throws std::invalid_argument on mismatch.
-void check_gemm_shapes(const Tensor& A, const Tensor& B, const Tensor& C) {
-    if (A.shape().rank != 2 || B.shape().rank != 2 || C.shape().rank != 2)
-        throw std::invalid_argument("gemm: all tensors must be rank-2");
-    const int64_t M = A.shape()[0];
-    const int64_t K = A.shape()[1];
-    const int64_t Kb = B.shape()[0];
-    const int64_t N = B.shape()[1];
-    const int64_t Mc = C.shape()[0];
-    const int64_t Nc = C.shape()[1];
-    if (K != Kb)
-        throw std::invalid_argument("gemm: A columns != B rows");
-    if (M != Mc || N != Nc)
-        throw std::invalid_argument("gemm: C shape does not match M x N");
-}
-} // namespace
-
 void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, float beta) {
-    check_gemm_shapes(A, B, C);
+    detail::check_gemm_shapes("gemm_fp32_naive", A, B, C);
 
     const int64_t M = A.shape()[0];
     const int64_t K = A.shape()[1];
@@ -36,7 +19,9 @@ void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha, f
     float* c = C.data<float>();
 
     // Pre-scale C by beta (single pass avoids a temp buffer).
-    if (beta != 1.0f) {
+    if (beta == 0.0f) {
+        std::memset(c, 0, static_cast<size_t>(M * N) * sizeof(float));
+    } else if (beta != 1.0f) {
         for (int64_t i = 0; i < M * N; ++i)
             c[i] *= beta;
     }
