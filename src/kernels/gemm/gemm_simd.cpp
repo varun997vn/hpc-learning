@@ -113,11 +113,22 @@ static void gemm_fp32_avx2(const float* __restrict__ a,
                     const float* a_row = a + i * K;
                     float*       c_row = c + i * N;
 
+                    // Prefetch the C row for the next i iteration into L1 so
+                    // the read-modify-write in the k loop hits cache.
+                    if (i + 1 < i0 + ib)
+                        __builtin_prefetch(c + (i + 1) * N + j0, 1, 3);
+
                     for (int64_t k = k0; k < k0 + kb; ++k) {
                         // Fold alpha into the broadcast — inner loop is:
                         //   c[j] += a_scaled * b[k][j]
                         const float  a_s   = alpha * a_row[k];
                         const __m256 a_vec = _mm256_set1_ps(a_s);
+
+                        // Prefetch the B row 8 k-steps ahead into L2 to hide
+                        // the stride-N access latency before it enters the FMA loop.
+                        constexpr int64_t kPrefDist = 8;
+                        if (k + kPrefDist < k0 + kb)
+                            __builtin_prefetch(b + (k + kPrefDist) * N + j0, 0, 1);
 
                         for (int64_t j = j0; j < j0 + jb8; j += 8) {
                             __m256 c_vec = _mm256_loadu_ps(c_row + j);
