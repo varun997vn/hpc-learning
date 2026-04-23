@@ -48,11 +48,6 @@ void gemm_fp32_tiled(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, Ti
     throw std::runtime_error("gemm_fp32_tiled: not implemented");
 }
 
-void gemm_fp32_parallel(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/,
-                        TilingConfig /*cfg*/, int /*n_threads*/, float /*alpha*/, float /*beta*/) {
-    throw std::runtime_error("gemm_fp32_parallel: not implemented");
-}
-
 void gemm_fp32_simd(const Tensor& /*A*/, const Tensor& /*B*/, Tensor& /*C*/, TilingConfig /*cfg*/,
                     int /*n_threads*/, float /*alpha*/, float /*beta*/) {
     throw std::runtime_error("gemm_fp32_simd: not implemented");
