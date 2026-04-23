@@ -1,88 +1,85 @@
-// Microbenchmark for gemm_fp32_naive.
-//
-// This file is wired into the build when benchmarks/CMakeLists.txt exists
-// (added by the build-system agent in a parallel branch).  Until then it
-// compiles independently and is not linked by default.
-//
-// Usage (once the benchmark target is active):
-//   cmake --preset release && cmake --build build/release --target bench_gemm_naive
-//   build/release/benchmarks/microbench/bench_gemm_naive \
-//       --benchmark_min_time=1 --benchmark_repetitions=5
-//
-// Sizes follow the project mandate: powers-of-two up to 4096 plus the
-// non-power-of-two sizes 384 and 768 that exercise non-aligned edge cases.
-
 #include "engine/kernels/gemm.hpp"
 #include "engine/tensor.hpp"
 
 #include <benchmark/benchmark.h>
-#include <cstdlib>
+#include <random>
 
 using namespace ie;
 using namespace ie::kernels;
 
-static void fill_random(Tensor& t) {
+static void fill_random(Tensor& t, uint32_t seed = 42) {
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     float* p = t.data<float>();
     for (int64_t i = 0; i < t.numel(); ++i)
-        p[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        p[i] = dist(rng);
 }
 
-// Square GEMM: C[N,N] = A[N,N] * B[N,N]
+// Benchmark sizes: {64,128,256,512,1024,2048,4096} + {384,768} non-power-of-2.
+// We skip 2048 and 4096 for naive to avoid multi-minute runs in CI;
+// they are present in the tiled benchmark.
 static void BM_GemmNaive_Square(benchmark::State& state) {
-    const int64_t N = state.range(0);
+    const int N = static_cast<int>(state.range(0));
     auto A = Tensor::create(make_shape(N, N), DType::FP32);
     auto B = Tensor::create(make_shape(N, N), DType::FP32);
     auto C = Tensor::create(make_shape(N, N), DType::FP32);
-    fill_random(A);
-    fill_random(B);
-    fill_random(C);
+    fill_random(A, 1);
+    fill_random(B, 2);
+    fill_random(C, 3);
 
     for (auto _ : state) {
         gemm_fp32_naive(A, B, C, 1.0f, 0.0f);
         benchmark::ClobberMemory();
     }
 
-    // 2*N^3 FLOPs per matrix multiply (N^3 multiplies + N^3 adds)
-    const double flops = 2.0 * static_cast<double>(N) * static_cast<double>(N) *
-                         static_cast<double>(N) * static_cast<double>(state.iterations());
+    const double flops =
+        2.0 * static_cast<double>(N) * static_cast<double>(N) * static_cast<double>(N);
     state.counters["GFLOPS"] =
-        benchmark::Counter(flops, benchmark::Counter::kIsRate, benchmark::Counter::OneK::kIs1000);
-    state.counters["GFLOPS"] /= 1e9;
+        benchmark::Counter(flops, benchmark::Counter::kIsRate, benchmark::Counter::kIs1000);
+    state.counters["N"] = static_cast<double>(N);
 }
-
-// clang-format off
 BENCHMARK(BM_GemmNaive_Square)
-    ->Arg(64)->Arg(128)->Arg(256)->Arg(512)->Arg(384)->Arg(768)
+    ->Args({64})
+    ->Args({128})
+    ->Args({256})
+    ->Args({384})
+    ->Args({512})
+    ->Args({768})
     ->Unit(benchmark::kMillisecond);
-// clang-format on
 
-// Larger sizes are slow for the naive kernel; gate them behind a separate
-// registration so nightly runs can opt in with --benchmark_filter=Large.
-static void BM_GemmNaive_Square_Large(benchmark::State& state) {
-    const int64_t N = state.range(0);
+static void BM_GemmTiled_Square(benchmark::State& state) {
+    const int N = static_cast<int>(state.range(0));
     auto A = Tensor::create(make_shape(N, N), DType::FP32);
     auto B = Tensor::create(make_shape(N, N), DType::FP32);
     auto C = Tensor::create(make_shape(N, N), DType::FP32);
-    fill_random(A);
-    fill_random(B);
-    fill_random(C);
+    fill_random(A, 1);
+    fill_random(B, 2);
+    fill_random(C, 3);
+
+    // Default TilingConfig {mc=64, nc=64, kc=64} — fits 3*64*64*4 = 48 KB in L1.
+    const TilingConfig cfg{};
 
     for (auto _ : state) {
-        gemm_fp32_naive(A, B, C, 1.0f, 0.0f);
+        gemm_fp32_tiled(A, B, C, cfg, 1.0f, 0.0f);
         benchmark::ClobberMemory();
     }
 
-    const double flops = 2.0 * static_cast<double>(N) * static_cast<double>(N) *
-                         static_cast<double>(N) * static_cast<double>(state.iterations());
+    const double flops =
+        2.0 * static_cast<double>(N) * static_cast<double>(N) * static_cast<double>(N);
     state.counters["GFLOPS"] =
-        benchmark::Counter(flops, benchmark::Counter::kIsRate, benchmark::Counter::OneK::kIs1000);
-    state.counters["GFLOPS"] /= 1e9;
+        benchmark::Counter(flops, benchmark::Counter::kIsRate, benchmark::Counter::kIs1000);
+    state.counters["N"] = static_cast<double>(N);
 }
-
-// clang-format off
-BENCHMARK(BM_GemmNaive_Square_Large)
-    ->Arg(1024)->Arg(2048)->Arg(4096)
+BENCHMARK(BM_GemmTiled_Square)
+    ->Args({64})
+    ->Args({128})
+    ->Args({256})
+    ->Args({384})
+    ->Args({512})
+    ->Args({768})
+    ->Args({1024})
+    ->Args({2048})
+    ->Args({4096})
     ->Unit(benchmark::kMillisecond);
-// clang-format on
 
 BENCHMARK_MAIN();
