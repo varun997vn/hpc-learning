@@ -1,0 +1,5 @@
+add_executable(test_gemm_correctness test_gemm_correctness.cpp)
+target_link_libraries(test_gemm_correctness PRIVATE ie_gemm GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(test_gemm_correctness PROPERTIES TIMEOUT 120)
