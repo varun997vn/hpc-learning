@@ -31,6 +31,10 @@ void gemm_fp32_tiled(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig c
     const int nc = cfg.nc;
     const int kc = cfg.kc;
 
+    // Distance (in rows) to prefetch ahead. 4 rows × 64 cols × 4B = 1 KB,
+    // enough to hide ~100-cycle DRAM latency at typical FP32 bandwidths.
+    static constexpr int64_t kPrefetchDist = 4;
+
     // Pre-scale C by beta so the accumulation loop only needs += alpha*a*b.
     if (beta == 0.0f) {
         std::memset(c, 0, static_cast<size_t>(M * N) * sizeof(float));
@@ -51,8 +55,18 @@ void gemm_fp32_tiled(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig c
                 //                               * B[k0..k_end, j0..j_end]
                 //                    into C[i0..i_end, j0..j_end]
                 for (int64_t i = i0; i < i_end; ++i) {
+#ifdef __GNUC__
+                    // Prefetch next A row into L1 while current row computes.
+                    if (i + kPrefetchDist < M)
+                        __builtin_prefetch(&a[(i + kPrefetchDist) * K + k0], 0, 1);
+#endif
                     for (int64_t k = k0; k < k_end; ++k) {
                         const float a_ik = alpha * a[i * K + k];
+#ifdef __GNUC__
+                        // Prefetch next B row into L1.
+                        if (k + kPrefetchDist < K)
+                            __builtin_prefetch(&b[(k + kPrefetchDist) * N + j0], 0, 1);
+#endif
                         for (int64_t j = j0; j < j_end; ++j)
                             c[i * N + j] += a_ik * b[k * N + j];
                     }
