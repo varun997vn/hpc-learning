@@ -75,14 +75,97 @@ A's column count equals B's row count and that C is M x N.
 
 ---
 
-## INT8 GEMM (ENG-404, planned)
+## INT8 GEMM (ENG-404)
 
-The INT8 variant will use the AVX2 `_mm256_maddubs_epi16` +
-`_mm256_madd_epi16` path. `maddubs` treats its first operand as unsigned
-u8 — since the quantized weights may be signed int8, the caller must shift
-the zero-point so one operand is always non-negative before calling `maddubs`,
-then correct in the requantization step. This trick is documented in the
-implementation inline comments and in this section when ENG-404 lands.
+### Reference implementation (`gemm_int8_fixed`)
+
+`gemm_int8_fixed` is the INT8 analogue of `gemm_fp32_naive`: a triple-loop
+reference with no tiling or SIMD. It is the correctness oracle for future
+optimised INT8 variants.
+
+**Input/output contract**
+
+| Tensor | DType | Description |
+|---|---|---|
+| A | INT8 | M×K, symmetric quantized (zero_point=0) |
+| B | INT8 | K×N, symmetric quantized (zero_point=0) |
+| C | FP32 | M×N, dequantized output |
+
+**Accumulator strategy**
+
+The inner loop accumulates into `int32_t`, never widening to `int64_t` or
+converting to `float` per step:
+
+```cpp
+int32_t acc = 0;
+for (int64_t k = 0; k < K; ++k)
+    acc += static_cast<int32_t>(a[i*K+k]) * static_cast<int32_t>(b[k*N+j]);
+c[i*N+j] = static_cast<float>(acc) * out_scale;
+```
+
+Using `int32_t` avoids per-multiply FP rounding while keeping the type wide
+enough to hold the sum of up to 127²×K products before overflow. For INT8
+inputs (range ±127), a single product is at most 127²=16129. With K products,
+the maximum accumulator value is 16129×K. For K=4096 (the largest benchmark
+size), max_acc ≈ 66M, well within the INT32 range of ≈2.1×10⁹.
+
+**Dequantization / requantization scale**
+
+After accumulation, the `int32_t` result is converted to FP32 in a single
+multiply:
+
+```
+C[i][j] = acc * (scale_a * scale_b / scale_c)
+```
+
+- `scale_a` and `scale_b` are the symmetric per-tensor scales for A and B
+  respectively (FP32_value ≈ INT8_value × scale).
+- `scale_c` allows callers to re-quantize the output into a different scale
+  domain (e.g. feed directly into a subsequent INT8 layer). Set `scale_c=1.0`
+  to return plain FP32.
+
+**Correctness tolerance**
+
+Roundtrip (quantize FP32 → INT8 GEMM → compare to FP32 naive) produces
+per-element error bounded by K×(scale_a + scale_b), where scale_a and
+scale_b are both ≈ max|input| / 127. For inputs in [−1, 1] and K=8, the
+typical worst-case error is < 0.13, verified in the unit tests.
+
+**Shape validation**
+
+`detail::check_int8_gemm_shapes()` in `gemm_internal.hpp` checks:
+- all three tensors are rank-2
+- A and B are DType::INT8; C is DType::FP32
+- A.cols == B.rows (inner dimension)
+- C is M×N
+
+---
+
+### AVX2 INT8 path (planned: ENG-405)
+
+The optimised INT8 variant will use:
+
+```
+_mm256_maddubs_epi16(a_u8, b_s8)  →  int16
+_mm256_madd_epi16(int16, ones)    →  int32
+```
+
+**The `maddubs` signed-operand trick**: `_mm256_maddubs_epi16` treats its
+*first* operand as **unsigned** u8 and its second as signed s8.  Because our
+quantized activations (A) are signed INT8 (range −127…127), at least one of
+them may be negative. To satisfy the unsigned requirement for the first
+operand we shift: add 128 to each element of A (making it u8, range 1…255)
+before calling `maddubs`, then subtract the corresponding bias from the
+accumulator in the requantization step. Specifically, for each column j of B:
+
+```
+bias_j = 128 × sum_k(B[k][j])
+acc_corrected = acc_maddubs − bias_j
+```
+
+This correction is computed once per column of B (outside the inner loop) so
+it adds O(K×N) work amortised over M rows. The trick is noted in inline
+comments in the AVX2 source file when ENG-405 lands.
 
 ---
 
