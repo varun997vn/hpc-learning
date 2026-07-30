@@ -1,6 +1,7 @@
 add_library(ie_quant STATIC
     calibrator.cpp
     per_channel.cpp
+    activation_calib.cpp
 )
 
 target_include_directories(ie_quant PUBLIC
