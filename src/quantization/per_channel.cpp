@@ -4,6 +4,18 @@
 #include <cmath>
 #include <stdexcept>
 
+namespace {
+
+// Round v * inv_scale to the nearest integer, then saturate into [-128, 127].
+// Using an INT32 intermediate prevents float-to-int8 truncation and avoids UB
+// from values that would overflow int8_t before clamping.
+inline int8_t per_channel_clamp(float v, float inv_scale) {
+    int32_t q = static_cast<int32_t>(std::round(v * inv_scale));
+    return static_cast<int8_t>(std::clamp(q, -128, 127));
+}
+
+} // namespace
+
 namespace ie {
 
 void PerChannelCalibrator::observe(const Tensor& weights) {
@@ -81,11 +93,10 @@ void quantize_per_channel(const Tensor& src, Tensor& dst, const PerChannelParams
     int8_t* d = dst.data<int8_t>();
 
     for (int c = 0; c < out_channels; ++c) {
-        // Multiply by reciprocal once per channel to avoid per-element division.
+        // Compute reciprocal once per channel to avoid per-element division.
         float inv_scale = 1.0f / params.scales[static_cast<size_t>(c)];
         for (int f = 0; f < in_features; ++f) {
-            int32_t q = static_cast<int32_t>(std::round(s[c * in_features + f] * inv_scale));
-            d[c * in_features + f] = static_cast<int8_t>(std::clamp(q, -128, 127));
+            d[c * in_features + f] = per_channel_clamp(s[c * in_features + f], inv_scale);
         }
     }
 }
