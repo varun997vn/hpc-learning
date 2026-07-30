@@ -3,6 +3,7 @@ add_library(ie_gemm STATIC
     gemm_tiled.cpp
     gemm_parallel.cpp
     gemm_simd.cpp
+    gemm_int8.cpp
 )
 
 target_include_directories(ie_gemm PUBLIC

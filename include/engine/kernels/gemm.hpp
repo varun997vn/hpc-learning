@@ -7,9 +7,9 @@ namespace ie::kernels {
 // Default tile (mc=nc=kc=64) fits 3 × 64×64 × 4B = 48 KiB in L1 for FP32,
 // leaving headroom for the L1 instruction cache on typical micro-architectures.
 struct TilingConfig {
-    int64_t mc = 64; // rows of A / C processed per outer tile
-    int64_t nc = 64; // columns of B / C processed per outer tile
-    int64_t kc = 64; // reduction dimension processed per outer tile
+  int64_t mc = 64; // rows of A / C processed per outer tile
+  int64_t nc = 64; // columns of B / C processed per outer tile
+  int64_t kc = 64; // reduction dimension processed per outer tile
 };
 
 // Computes  C = alpha * A * B + beta * C  (row-major, FP32).
@@ -19,23 +19,44 @@ struct TilingConfig {
 //
 // This is the reference implementation — no tiling, no SIMD.  Use it only
 // for correctness checks and as the baseline in benchmarks.
-void gemm_fp32_naive(const Tensor& A, const Tensor& B, Tensor& C, float alpha = 1.0f,
-                     float beta = 0.0f);
+void gemm_fp32_naive(const Tensor &A, const Tensor &B, Tensor &C,
+                     float alpha = 1.0f, float beta = 0.0f);
 
 // Cache-blocked variant.  Uses TilingConfig to fit working sets in L1/L2.
 // ENG-302: not yet implemented.
-void gemm_fp32_tiled(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig cfg = {},
-                     float alpha = 1.0f, float beta = 0.0f);
+void gemm_fp32_tiled(const Tensor &A, const Tensor &B, Tensor &C,
+                     TilingConfig cfg = {}, float alpha = 1.0f,
+                     float beta = 0.0f);
 
 // Tiled + OpenMP static scheduling across the M-dimension.
 // n_threads=0 lets OpenMP choose the thread count from OMP_NUM_THREADS.
 // ENG-303: not yet implemented.
-void gemm_fp32_parallel(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig cfg = {},
-                        int n_threads = 0, float alpha = 1.0f, float beta = 0.0f);
+void gemm_fp32_parallel(const Tensor &A, const Tensor &B, Tensor &C,
+                        TilingConfig cfg = {}, int n_threads = 0,
+                        float alpha = 1.0f, float beta = 0.0f);
 
 // Tiled + OpenMP + AVX2 8×8 micro-kernel (x86) or NEON (ARM).
 // ENG-304: not yet implemented.
-void gemm_fp32_simd(const Tensor& A, const Tensor& B, Tensor& C, TilingConfig cfg = {},
-                    int n_threads = 0, float alpha = 1.0f, float beta = 0.0f);
+void gemm_fp32_simd(const Tensor &A, const Tensor &B, Tensor &C,
+                    TilingConfig cfg = {}, int n_threads = 0,
+                    float alpha = 1.0f, float beta = 0.0f);
+
+// Quantization parameters for the INT8 GEMM kernel.
+// Symmetric quantization only: zero_point must be 0 for both inputs.
+// The FP32 value x is approximated as INT8 * scale.
+struct QuantParams {
+  float scale_a = 1.0f;   // scale for A: FP32 ≈ INT8 * scale_a
+  float scale_b = 1.0f;   // scale for B: FP32 ≈ INT8 * scale_b
+  float scale_c = 1.0f;   // output scale; result is dequantized to FP32
+  int32_t zero_point = 0; // reserved — must be 0 (symmetric quantization only)
+};
+
+// INT8 fixed-point GEMM: A[M,K] × B[K,N] → C[M,N].
+// A and B must be DType::INT8 (symmetric quantized, zero_point=0).
+// C must be DType::FP32 — the int32_t accumulator is dequantized via:
+//   C[i][j] = acc * (scale_a * scale_b / scale_c)
+// Throws std::invalid_argument if dtypes or shapes are invalid.
+void gemm_int8_fixed(const Tensor &A, const Tensor &B, Tensor &C,
+                     QuantParams qp = {});
 
 } // namespace ie::kernels
