@@ -48,14 +48,11 @@ QuantizationParams EmaCalibrator::compute_symmetric() const {
 QuantizationParams EmaCalibrator::compute_asymmetric() const {
     const float range = ema_max_ - ema_min_;
     const float scale = range > 0.0f ? range / 255.0f : 1.0f;
-    // Subtract 128 to convert from the UINT8 zero-point convention (range
-    // [0,255]) to the INT8 convention (range [-128,127]), ensuring that the
-    // quantized range
-    // [-128, 127] maps exactly to [ema_min, ema_max] with no saturation.
-    const int32_t zp = std::max(
-        -128,
-        std::min(127,
-                 static_cast<int32_t>(std::round(-ema_min_ / scale)) - 128));
+    // -128 converts from the UINT8 zero-point convention (q=round(-min/scale)
+    // in [0,255]) to INT8 (q in [-128,127]), so INT8 min (-128) maps to
+    // ema_min and INT8 max (127) maps to ema_max with no saturation loss.
+    const int32_t raw_zp = static_cast<int32_t>(std::round(-ema_min_ / scale));
+    const int32_t zp = std::max(-128, std::min(127, raw_zp - 128));
     return {scale, zp};
 }
 
@@ -108,9 +105,9 @@ void dequantize_activation(const Tensor &src, Tensor &dst,
     float *d = dst.data<float>();
     const int64_t n = src.numel();
 
+    const float zp_f = static_cast<float>(qp.zero_point);
     for (int64_t i = 0; i < n; ++i)
-        d[i] = (static_cast<float>(s[i]) - static_cast<float>(qp.zero_point)) *
-               qp.scale;
+        d[i] = (static_cast<float>(s[i]) - zp_f) * qp.scale;
 }
 
 } // namespace ie
