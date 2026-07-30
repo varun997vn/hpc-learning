@@ -124,13 +124,11 @@ TEST(EmaCalibrator, Symmetric_Params) {
 TEST(EmaCalibrator, Asymmetric_Params) {
     // ema_min=-2, ema_max=6
     // scale = (6 - (-2)) / 255 = 8/255
-    // zp = round(2 / (8/255)) - 128 = round(63.75) - 128 = 64 - 128 = -64
-    // But the formula in the spec: zp = clamp(round(-min / scale), -128, 127)
-    // Wait, checking the spec again:
-    // asymmetric: scale = (max - min) / 255
-    //             zp = clamp(round(-min / scale), -128, 127)
-    // No -128 subtraction in EmaCalibrator docs... Let me check the task spec.
-    // From task: zp = clamp(round(-ema_min / scale), -128, 127)
+    // zp = clamp(round(-ema_min / scale) - 128, -128, 127)
+    //    = clamp(round(63.75) - 128, -128, 127) = clamp(-64, ...) = -64
+    // The -128 offset converts from the UINT8 zero-point convention to INT8,
+    // ensuring the full [-128, 127] range maps to [ema_min, ema_max] with no
+    // saturation and minimal roundtrip error.
     EmaCalibrator cal(0.0f);
     auto t = Tensor::create(make_shape(2), DType::FP32);
     t.data<float>()[0] = -2.0f;
@@ -139,8 +137,8 @@ TEST(EmaCalibrator, Asymmetric_Params) {
 
     auto qp = cal.compute_asymmetric();
     const float expected_scale = 8.0f / 255.0f;
-    // zp = clamp(round(2 / (8/255)), -128, 127) = clamp(round(63.75), ...) = 64
-    const int32_t expected_zp = 64;
+    // zp = round(2/(8/255)) - 128 = 64 - 128 = -64
+    const int32_t expected_zp = -64;
 
     EXPECT_NEAR(qp.scale, expected_scale, 1e-6f);
     EXPECT_EQ(qp.zero_point, expected_zp);
@@ -175,7 +173,8 @@ TEST(QuantizeActivation, SymmetricZeroPoint) {
 TEST(QuantizeActivation, AsymmetricRoundtrip) {
     // Quantize then dequantize; max absolute error must be < scale.
     const float scale = 8.0f / 255.0f;
-    const int32_t zp = 64; // as computed in Asymmetric_Params test
+    const int32_t zp =
+        -64; // as computed in Asymmetric_Params test (INT8 convention)
     QuantizationParams qp{scale, zp};
 
     const int N = 16;
