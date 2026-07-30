@@ -1,4 +1,4 @@
-add_library(ie_quant STATIC calibrator.cpp)
+add_library(ie_quant STATIC calibrator.cpp activation_calib.cpp)
 target_include_directories(ie_quant PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
