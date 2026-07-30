@@ -99,3 +99,49 @@ registers and `_mm256_fmadd_ps`, chosen because:
 
 The implementation is gated on `#ifdef __AVX2__`; if the macro is absent
 the code falls back to the scalar tiled variant.
+
+---
+
+## Activation Quantization (ENG-403)
+
+### EMA-based range tracking
+
+`EmaCalibrator` (in `include/engine/quant_activation.hpp`) tracks the
+activation range across multiple calibration batches using EMA:
+
+```
+ema_t = momentum * ema_{t-1} + (1 - momentum) * batch_stat_t
+```
+
+The first call to `observe()` seeds `ema_min_` and `ema_max_` directly from
+the batch min/max rather than starting from 0, avoiding a cold-start bias.
+Default `momentum = 0.99` gives a half-life of ~69 batches.
+
+### Zero-point convention (INT8 vs UINT8)
+
+`compute_asymmetric()` returns a `QuantizationParams` with:
+
+```
+scale     = (ema_max - ema_min) / 255
+zero_point = clamp(round(-ema_min / scale) - 128, -128, 127)
+```
+
+The `- 128` term is critical: it converts from the UINT8 convention (where
+`zero_point ∈ [0, 255]` maps `ema_min` to q=0 and `ema_max` to q=255) to the
+INT8 convention (where `zero_point ∈ [-128, 127]` maps `ema_min` to q=-128
+and `ema_max` to q=127). Without it, values above the calibrated midpoint
+would saturate at INT8 max (127) and lose information.
+
+### Quantize / dequantize contracts
+
+```
+quantize_activation:   q[i] = clamp(round(x[i] / scale) + zero_point, -128, 127)
+dequantize_activation: x[i] = (q[i] - zero_point) * scale
+```
+
+These are exact inverses; roundtrip error is bounded by `scale / 2` for inputs
+within `[ema_min, ema_max]`. When `zero_point = 0` both collapse to the
+symmetric path, matching `quantize_symmetric` / `dequantize_symmetric` exactly.
+
+Validation (dtype and shape mismatch) throws `std::invalid_argument` at entry;
+the element loop is exception-free.
